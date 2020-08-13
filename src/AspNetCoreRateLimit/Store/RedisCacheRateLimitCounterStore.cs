@@ -7,7 +7,7 @@ namespace AspNetCoreRateLimit
 {
     public class RedisCacheRateLimitCounterStore : IRateLimitCounterStore
     {
-        static private readonly LuaScript _atomicIncrement = LuaScript.Prepare("local count count = redis.call(\"INCR\", @key) if tonumber(count) == 1 then redis.call(\"EXPIRE\", @key, @timeout) end return count");
+        static private readonly LuaScript _atomicIncrement = LuaScript.Prepare("local count count = redis.call(\"INCRBYFLOAT\", @key, tonumber(@delta)) if tonumber(count) == @delta then redis.call(\"EXPIRE\", @key, @timeout) end return count");
         private readonly IConnectionMultiplexer _redis;
 
         public RedisCacheRateLimitCounterStore(IConnectionMultiplexer redis)
@@ -22,7 +22,7 @@ namespace AspNetCoreRateLimit
             var intervalStart = new DateTime(intervalNumber * interval.Ticks, DateTimeKind.Utc);
 
             // Call the Lua script
-            var count = await _redis.GetDatabase().ScriptEvaluateAsync(_atomicIncrement, new { key = counterId, timeout = interval.TotalSeconds });
+            var count = await _redis.GetDatabase().ScriptEvaluateAsync(_atomicIncrement, new { key = counterId, timeout = interval.TotalSeconds, delta = RateIncrementer?.Invoke() ?? 1D });
             return new RateLimitCounter
             {
                 Count = (double)count,
